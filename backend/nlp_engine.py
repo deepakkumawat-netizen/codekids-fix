@@ -1,4 +1,4 @@
-﻿from ai_client import client as _fallback_client
+﻿from ai_client import client as _fallback_client, GROQ_MODEL
 """
 NLP Engine for ClassroomAI - Shared across all projects
 Features:
@@ -13,7 +13,7 @@ import json
 class NLPEngine:
     def __init__(self):
         self.client = _fallback_client
-        self.model = "llama-3.3-70b-versatile"
+        self.model = GROQ_MODEL
 
     def analyze_question(self, question: str, context: str = "") -> dict:
         """

@@ -13,7 +13,7 @@ class Agent:
 
     def execute(self, task: str) -> str:
         response = self.client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model=os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
             messages=[
                 {"role": "system", "content": f"You are a {self.role}. Goal: {self.goal}"},
                 {"role": "user", "content": task}

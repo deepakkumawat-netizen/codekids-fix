@@ -87,6 +87,15 @@ class UsageIncrementRequest(BaseModel):
     user_id: str
     tool_name: str
 
+class WorkspaceAgentRequest(BaseModel):
+    module: str
+    action: str
+    prompt: str = ""
+    code: str = ""
+    language: str = "Python"
+    grade_level: str = "6"
+    context: str = ""
+
 # ═════════════════════════════════════════════════════════════════════════════
 # UTILITY FUNCTIONS
 # ═════════════════════════════════════════════════════════════════════════════
@@ -120,7 +129,7 @@ def call_ai(user_prompt: str, history: list = None, system: str = None) -> str:
     try:
         client = _fallback_client
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model=os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
             messages=messages,
             max_tokens=2000,
             temperature=0.7,
@@ -151,10 +160,13 @@ async def startup_event():
 @app.get("/api/health")
 async def health():
     compiler_status = verify_bundled_compilers()
+    available = {k: v for k, v in compiler_status.items() if v != "not found"}
+    missing = {k: v for k, v in compiler_status.items() if v == "not found"}
     return {
         "status": "ok",
-        "available_compilers": len(compiler_status["available"]),
-        "missing_compilers": len(compiler_status["missing"])
+        "available_compilers": len(available),
+        "missing_compilers": len(missing),
+        "compilers": compiler_status,
     }
 
 @app.post("/api/run")
@@ -628,6 +640,67 @@ async def search_study_topics(request: dict):
         "grade_level": grade_level,
         "results": results,
         "total": len([r for r in results if r["matched"]])
+    }
+
+@app.post("/api/workspace/agent")
+async def workspace_agent(request: WorkspaceAgentRequest):
+    """Unified workspace agent for the advanced CodeKids hub."""
+    tone = get_grade_tone(request.grade_level)
+    module = request.module.lower().strip()
+    action = request.action.lower().strip()
+    prompt = request.prompt.strip()
+    code = request.code.strip()
+
+    system_by_module = {
+        "code": "You are a senior programming mentor. Give precise, practical feedback.",
+        "debugger": "You are a debugging coach. Identify likely causes and guide the student without overwhelming them.",
+        "tutor": "You are a grade-aware AI tutor. Teach step by step and check understanding.",
+        "summarizer": "You are an expert study-note summarizer. Preserve source meaning and remove fluff.",
+        "classroom": "You are a teacher planning assistant. Create classroom-ready materials with clear timing and outputs.",
+        "quiz": "You are an assessment designer. Create fair questions, answer keys, and grading guidance.",
+    }
+
+    action_guidance = {
+        "summarize": "Summarize the provided text into clear, concise paragraphs.",
+        "notes": "Convert the provided text into structured study notes with headings and bullets.",
+        "lesson": "Create a complete lesson plan with objectives, warmup, teaching flow, activity, checks, and exit ticket.",
+        "worksheet": "Create a worksheet with instructions, student tasks, and an answer key.",
+        "quiz": "Create a quiz with mixed question types and an answer key.",
+        "rubric": "Create a practical grading rubric with criteria and point bands.",
+        "teach": "Teach the requested concept with examples and a short practice task.",
+        "practice": "Create a practice problem with hints, expected output, and starter code if useful.",
+        "debug": "Debug the code or described issue. Include likely cause, line or area, and next steps.",
+        "explain-error": "Explain the error or symptom in plain language and suggest what to inspect next.",
+        "assist": "Help with the workspace task directly and concretely.",
+        "explain": "Explain the code and concepts clearly.",
+        "improve": "Review the code and suggest specific improvements.",
+        "hint": "Give hints without fully solving the task.",
+    }
+
+    system = f"{system_by_module.get(module, system_by_module['code'])} {tone}"
+    user_prompt = f"""Workspace module: {request.module}
+Action: {request.action}
+Grade level: {request.grade_level}
+Language: {request.language}
+
+Task guidance:
+{action_guidance.get(action, action_guidance['assist'])}
+
+User request:
+{prompt or 'No extra request provided.'}
+
+Code or source text:
+```{request.language}
+{code or 'No code/source provided.'}
+```
+
+Return a polished, directly usable response. Use concise headings. Include concrete next steps."""
+
+    response = call_ai(user_prompt, system=system)
+    return {
+        "module": request.module,
+        "action": request.action,
+        "response": response,
     }
 
 # ═════════════════════════════════════════════════════════════════════════════
